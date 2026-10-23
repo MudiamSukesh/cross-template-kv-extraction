@@ -55,7 +55,7 @@ offsets in a scale-invariant frame, which we prove is invariant to translation a
 the page, and which an ablation shows is what makes the representation transfer. Training uses
 FUNSD, SROIE and WildReceipt under a template-level split with explicit leakage assertions;
 VRDU is held out entirely and never trained on. On unseen templates the system reaches
-0.695 value recall against 0.918 on seen templates, and scores 0.504 micro F1 on VRDU's own
+0.695 value recall against 0.918 on seen templates, and scores 0.593 micro F1 on VRDU's own
 benchmark-style field metric with no VRDU training data at all. A second split that holds out
 in-domain templates shows that entity, link and end-to-end pair F1 do \emph{not} degrade on
 unseen templates --- every gap interval contains zero --- establishing that the headline gap is
@@ -532,7 +532,7 @@ to ask for, which re-imposes the per-schema cost the project exists to remove.
 (Section~\ref{sec:ablations}). It is retained on argument, not evidence, and this is stated
 rather than hidden.
 
-\textbf{VRDU's ad-buy line items are effectively not extracted}, at 0.004 F1. This is a real
+\textbf{VRDU's ad-buy line items are effectively not extracted}, at 0.005 F1. This is a real
 failure of the approach on tables and is analysed in Section~\ref{sec:limits}.
 
 \textbf{A field-naming bug was found by inspecting test-set output.} Early VRDU scoring chose a
@@ -575,8 +575,8 @@ documents of one template are not independent observations.
 \textbf{Split} & \textbf{Docs} & \textbf{Tmpl} & \textbf{value\_rec} &
 \textbf{kv\_field\_rec} & \textbf{entity\_f1} & \textbf{link\_f1} & \textbf{e2e\_pair\_f1} \\
 \midrule
-val                & 310   & 197   & 0.945 & 0.728 & 0.932 & 0.940 & 0.813 \\
-seen\_test         & 280   & 197   & 0.918 & 0.645 & 0.914 & 0.935 & 0.770 \\
+val                & 310   & 197   & 0.946 & 0.728 & 0.933 & 0.940 & 0.814 \\
+seen\_test         & 280   & 197   & 0.918 & 0.648 & 0.914 & 0.935 & 0.769 \\
 unseen\_test (VRDU)& 4{,}991 & 1{,}100 & 0.695 & 0.511 & -- & -- & -- \\
 \bottomrule
 \end{tabular}
@@ -591,8 +591,8 @@ unseen\_test (VRDU)& 4{,}991 & 1{,}100 & 0.695 & 0.511 & -- & -- & -- \\
 \textbf{Metric} & \textbf{Seen} & \textbf{Unseen} & \textbf{Gap} & \textbf{95\% CI} &
 \textbf{Relative drop} \\
 \midrule
-value\_recall    & 0.918 & 0.695 & $+0.223$ & $[+0.189, +0.253]$ & 24.3\% \\
-kv\_field\_recall& 0.645 & 0.511 & $+0.134$ & $[+0.009, +0.272]$ & 20.8\% \\
+value\_recall    & 0.918 & 0.695 & $+0.223$ & $[+0.188, +0.253]$ & 24.3\% \\
+kv\_field\_recall& 0.648 & 0.511 & $+0.137$ & $[+0.012, +0.273]$ & 21.1\% \\
 \bottomrule
 \end{tabular}
 \caption{The generalisation gap of the base run.}
@@ -656,13 +656,13 @@ The error breakdown agrees: 94.6\% of gold-linked values take the right key on s
 
 Re-scoring the saved predictions under VRDU's own type-specific matching and its
 precision/recall/F1 definition, with no VRDU training data of any kind, gives
-\textbf{0.504 micro F1} on registration-form (micro P 0.595, R 0.437, CI $[0.476, 0.512]$) and
-\textbf{0.499 unrepeated F1} on ad-buy-form. Per field, \code{registration\_num} reaches 0.920 F1
-and \code{registrant\_name} 0.790, while \code{signer\_title} scores 0.000 and \code{line\_item}
-0.004.
+\textbf{0.593 micro F1} on registration-form (micro P 0.656, R 0.541, CI $[0.567, 0.616]$) and
+\textbf{0.497 unrepeated F1} on ad-buy-form. Per field, \code{registration\_num} reaches 0.920 F1
+and \code{registrant\_name} 0.789, while \code{signer\_title} scores 0.002 and \code{line\_item}
+0.005.
 
 The \code{unseen15} run of Section~\ref{sec:unseen15} scores lower on the same metric ---
-0.439 micro F1 $[0.334, 0.484]$ on registration-form and 0.456 unrepeated F1 on ad-buy-form ---
+0.516 micro F1 $[0.437, 0.542]$ on registration-form and 0.456 unrepeated F1 on ad-buy-form ---
 which is the expected cost of the 377 training documents it gives up in order to make the
 structural metrics measurable. The two runs answer different questions and neither supersedes
 the other: the base run is the system, and \code{unseen15} is the instrument that separates
@@ -670,9 +670,9 @@ template novelty from domain novelty.
 
 \subsection{Per-field behaviour: finding is not keying}
 
-\begin{figure}[htbp]
+\begin{figure}[!htb]
 \centering
-\includegraphics[width=0.96\textwidth]{perfield.pdf}
+\includegraphics[width=0.90\textwidth]{perfield.pdf}
 \caption{VRDU per-field recall on unseen templates, base run, both corpora pooled. The upper bar
 is value recall (the text was found); the lower bar is key-matched recall (found \emph{and}
 correctly named). The distance between them is the share of values the model located but could
@@ -683,10 +683,10 @@ not name. \code{tv\_address} has no alias mapping and so has no key-matched bar.
 Three bands are visible in Figure~\ref{fig:perfield}. Fields with one stable printed label ---
 \code{registration\_num} (93/92), \code{contract\_num} (84/83), \code{file\_date} (75/74),
 \code{advertiser} (68/66) --- have bars within three points of each other: once found, they are
-named correctly. Table columns collapse: \code{channel} falls from 0.778 to 0.217,
-\code{sub\_amount} from 0.954 to 0.557, \code{gross\_amount} from 0.978 to 0.690. Values with no
+named correctly. Table columns collapse: \code{channel} falls from 0.777 to 0.218,
+\code{sub\_amount} from 0.955 to 0.558, \code{gross\_amount} from 0.977 to 0.690. Values with no
 printed label at all are never found in the first place: \code{signer\_title} 0.078,
-\code{tv\_address} 0.132, \code{signer\_name} 0.249.
+\code{tv\_address} 0.138, \code{signer\_name} 0.246.
 
 \subsection{Ablations}
 \label{sec:ablations}
@@ -698,28 +698,39 @@ printed label at all are never found in the first place: \code{signer\_title} 0.
 \textbf{Run} & \textbf{Seen} & \textbf{Unseen} & \textbf{Gap} &
 \textbf{FARA F1 [95\% CI]} & \textbf{DeepForm F1} \\
 \midrule
-base (relative geometry + aug.)       & 0.918 & 0.695 & $+0.223$ & \textbf{0.504} $[0.476, 0.512]$ & \textbf{0.499} \\
-\code{absgeom} (absolute geometry)    & \textbf{0.938} & 0.671 & $+0.267$ & 0.438 $[0.332, 0.473]$ & 0.480 \\
-\code{noaug} (no augmentation)        & 0.933 & \textbf{0.703} & $+0.230$ & 0.477 $[0.413, 0.498]$ & 0.475 \\
+base (relative geometry + aug.)       & 0.918 & 0.695 & $+0.223$ & \textbf{0.593} $[0.567, 0.616]$ & \textbf{0.497} \\
+\code{absgeom} (absolute geometry)    & \textbf{0.938} & 0.671 & $+0.267$ & 0.541 $[0.452, 0.593]$ & 0.484 \\
+\code{noaug} (no augmentation)        & 0.933 & \textbf{0.703} & $+0.230$ & 0.571 $[0.524, 0.608]$ & 0.478 \\
 \bottomrule
 \end{tabular}
 \caption{Ablations. Seen and unseen columns are value recall.}
 \label{tab:ablations}
 \end{table}
 
-\textbf{\code{absgeom} produced exactly the predicted pattern, and it is the strongest evidence in
-this report.} Absolute geometry is \emph{better} than relative geometry on seen templates ---
-0.938 against 0.918 value recall --- and worse wherever the template is new: unseen value recall
-falls to 0.671, the gap widens to $+0.267$, and the VRDU field score drops to 0.438, with the
-intervals $[0.476, 0.512]$ and $[0.332, 0.473]$ \emph{not overlapping}. Absolute coordinates
-therefore buy in-domain accuracy by learning where fields sit on the training templates, which is
-precisely the shortcut the relative frame removes. An ablation that merely removed capacity would
-have cost accuracy on both sides; trading seen-template accuracy for cross-template transfer is
-the signature of a removed shortcut.
+\textbf{\code{absgeom} moves every measure in the predicted direction.} Absolute geometry is
+\emph{better} than relative geometry on seen templates --- 0.938 against 0.918 value recall ---
+and worse on every measure that involves a template the model has not met: unseen value recall
+falls from 0.695 to 0.671, the seen-minus-unseen gap widens from $+0.223$ to $+0.267$, the FARA
+field score drops from 0.593 to 0.541, and the DeepForm score from 0.497 to 0.484. Five
+independent measures, one direction. The natural reading is that absolute coordinates buy
+in-domain accuracy by learning where fields sit on the training templates, which is precisely the
+shortcut the relative frame is designed to remove; an ablation that merely removed capacity would
+have cost accuracy on both sides rather than trading one for the other.
 
-\textbf{\code{noaug} is not significant and no claim is made from it.} Its interval overlaps the
-base interval along most of its length, and unseen value recall is in fact marginally higher
-without augmentation.
+\textbf{No single one of those differences is statistically significant, and the report does not
+claim otherwise.} The FARA intervals $[0.567, 0.616]$ and $[0.452, 0.593]$ overlap, as do the two
+gap intervals $[+0.188, +0.253]$ and $[+0.238, +0.298]$. With one run per configuration and
+bootstrap intervals taken over templates, this experiment can establish a consistent direction but
+not significance; distinguishing the two would need several seeds per configuration, which was
+beyond the compute available. The honest summary is that the geometry result is
+\emph{directionally consistent across five measures and two corpora, and individually
+inconclusive on each}.
+
+\textbf{\code{noaug} is weaker still.} Its FARA interval $[0.524, 0.608]$ sits almost entirely
+inside the base interval, and unseen value recall is in fact marginally \emph{higher} without
+augmentation (0.703 against 0.695). Scale, shift and jitter make no measurable difference on this
+test set. They cost nothing and are kept on the argument given in Section~\ref{sec:after} rather
+than on evidence, and that is a weaker footing than the geometry claim.
 
 \subsection{What limits generalisation}
 \label{sec:limits}
@@ -729,7 +740,7 @@ Two structural assumptions fail, and the failure analysis names both.
 \textbf{``A key sits beside its value'' fails for tables.} A column header is one key for dozens
 of values stacked beneath it, which is not the one-key-beside-one-value geometry the link scorer
 was trained on. This produces the found-but-not-keyed collapse of
-Figure~\ref{fig:perfield} and the 0.004 line-item F1. Counterfactual probes confirm the
+Figure~\ref{fig:perfield} and the 0.005 line-item F1. Counterfactual probes confirm the
 direction bias directly: moving every value below its key costs 0.167 of value accuracy, and
 mirroring the page horizontally costs 0.227.
 
@@ -752,7 +763,7 @@ targets a named structural assumption and uses machinery the model already has.
 
 \begin{enumerate}[leftmargin=1.5em,itemsep=2pt]
   \item \textbf{Group table cells into rows by vertical banding rather than reading order.}
-        Targets the 0.004 line-item F1. Reading-order grouping breaks whenever one cell is missing
+        Targets the 0.005 line-item F1. Reading-order grouping breaks whenever one cell is missing
         or extra; banding by shared vertical position is how a person reads a table row.
   \item \textbf{Allow a key above a column of values}, weighting the column-overlap feature
         accordingly. Targets the found-but-not-keyed collapse. The geometry features already carry
@@ -776,14 +787,17 @@ equal source sampling matter?), \code{nosroie} (does value-only supervision help
 We built a schema-free key-value extraction system that is told nothing about which fields a form
 contains, and evaluated it under a template-level split with explicit leakage assertions. On
 templates it has never seen it recovers 0.695 of gold values against 0.918 on seen templates, and
-scores 0.504 micro F1 under VRDU's own benchmark-style field metric with no VRDU training data of
+scores 0.593 micro F1 under VRDU's own benchmark-style field metric with no VRDU training data of
 any kind.
 
 Three conclusions are supported by the measurements rather than by argument.
 
-\textbf{Relative geometry is what makes the representation transfer.} The \code{absgeom} ablation
-scores \emph{better} than the full system on seen templates and significantly worse on VRDU, with
-non-overlapping confidence intervals. That asymmetry is the signature of a removed shortcut.
+\textbf{Relative geometry appears to be what makes the representation transfer.} The
+\code{absgeom} ablation scores \emph{better} than the full system on seen templates and worse on
+every cross-template measure --- unseen value recall, the width of the gap, and both VRDU corpora.
+That asymmetry is the signature of a removed shortcut rather than of reduced capacity. The
+intervals overlap, so the result is directionally consistent across five measures rather than
+individually significant; confirming it would need several seeds per configuration.
 
 \textbf{Template novelty is nearly free; domain novelty is the real cost.} Under a split that
 holds out in-domain templates, entity F1, link F1 and end-to-end pair F1 show no degradation at

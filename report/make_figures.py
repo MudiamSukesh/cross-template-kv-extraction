@@ -3,13 +3,13 @@ Numbers are the base run's per-field VRDU recall (runs\\base\\analysis\\failure_
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt, numpy as np
 
-rows = [("gross_amount",0.978,0.690),("sub_amount",0.954,0.557),("registrant_name",0.944,0.820),
-        ("registration_num",0.929,0.917),("contract_num",0.835,0.825),("program_end_date",0.790,0.614),
-        ("channel",0.778,0.217),("program_start_date",0.778,0.487),("file_date",0.750,0.742),
-        ("advertiser",0.679,0.658),("property",0.587,0.285),("flight_to",0.586,0.467),
-        ("program_desc",0.585,0.304),("flight_from",0.573,0.440),("agency",0.570,0.533),
-        ("product",0.568,0.549),("foreign_principle_name",0.355,0.253),("signer_name",0.249,0.220),
-        ("tv_address",0.132,None),("signer_title",0.078,0.051)]
+rows = [("gross_amount",0.977,0.690),("sub_amount",0.955,0.558),("registrant_name",0.945,0.819),
+        ("registration_num",0.929,0.917),("contract_num",0.837,0.826),("program_end_date",0.790,0.612),
+        ("program_start_date",0.778,0.487),("channel",0.777,0.218),("file_date",0.749,0.741),
+        ("advertiser",0.679,0.657),("program_desc",0.587,0.305),("flight_to",0.586,0.468),
+        ("property",0.584,0.283),("flight_from",0.574,0.445),("agency",0.572,0.533),
+        ("product",0.566,0.547),("foreign_principle_name",0.352,0.252),("signer_name",0.246,0.218),
+        ("tv_address",0.138,None),("signer_title",0.078,0.051)]
 names=[r[0] for r in rows]; vr=[r[1] for r in rows]
 kr=[0.0 if r[2] is None else r[2] for r in rows]; mask=[r[2] is None for r in rows]
 y=np.arange(len(rows)); h=0.38
