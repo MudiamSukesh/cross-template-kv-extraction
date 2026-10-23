@@ -67,7 +67,7 @@ because they are large, reproducible, or not ours to redistribute:
 | --- | --- | --- |
 | `data/` | several GB | public corpora: FUNSD, SROIE (ICDAR 2019 Task 3), WildReceipt, VRDU. Sources are cited in the report. |
 | `cache/` | ~300 MB | rebuilt by steps 1 and 1b below, from `data/` |
-| `runs/` | ~2 GB | four trained checkpoints, published as GitHub release assets (`best.pt` per run); or retrain with step 4 |
+| `runs/` | ~2 GB | four trained checkpoints, published as [GitHub release assets](https://github.com/MudiamSukesh/cross-template-kv-extraction/releases/tag/v1.0); or retrain with step 4 |
 | `.venv/` | ~5 GB | `python -m venv .venv` then the install lines below |
 
 A fresh clone therefore runs the test suite immediately, and reproduces every reported number once
