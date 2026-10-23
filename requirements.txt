@@ -1,0 +1,13 @@
+# Install torch FIRST with the CUDA build for your GPU (RTX 50-series needs CUDA 12.8+):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# then:  pip install -r requirements.txt
+transformers>=4.40      # tested with 4.57 and 5.x
+tokenizers>=0.19
+numpy
+scipy
+pillow
+pyyaml
+flask
+python-doctr>=1.0       # OCR (text + word boxes) for uploads and the docTR VRDU variant
+pypdfium2               # PDF rendering
+rapidfuzz               # fast string similarity for the metrics (optional)

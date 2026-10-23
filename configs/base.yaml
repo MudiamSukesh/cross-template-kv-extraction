@@ -1,0 +1,47 @@
+# Base configuration. Every ablation is this file with one key changed via --set.
+data:
+  docs: cache/split/docs_split.jsonl     # FUNSD + SROIE + WildReceipt with train/val/seen_test splits
+  train_sources: []          # [] = every source in the docs file
+  eval_sources: []
+  test_docs: [cache/vrdu.jsonl]          # held-out test set, never trained on (scripts/01b_build_vrdu.py)
+  balance_sources: true      # sample FUNSD, SROIE and WildReceipt equally per epoch
+
+model:
+  backbone: microsoft/layoutlmv3-base   # or a local folder holding the downloaded checkpoint
+  visual: false              # ABLATION: true adds the image stream
+  box_level: word            # ABLATION: segment (gold entity boxes) is optimistic
+  max_tokens: 512
+  dropout: 0.1
+  ent_dim: 256
+  geom_dim: 64
+  pair_hidden: 512
+  link_geometry: relative    # ABLATION: relative | absolute | none
+
+train:
+  epochs: 20
+  batch_size: 2              # fits an 8 GB GPU at 512 tokens; raise if memory allows
+  grad_accum: 2
+  lr: 3.0e-5
+  head_lr: 3.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  link_weight: 1.0
+  max_grad_norm: 1.0
+  amp: auto                  # bf16 on RTX 30xx/40xx/50xx
+  select_metric: mean        # on VAL templates only: mean of value recall, entity, link, e2e pair F1
+  patience: 5
+  seed: 0
+  num_workers: 0
+  out_dir: runs/base
+
+augment:
+  enabled: true              # ABLATION: false
+  scale_min: 0.85
+  shift: true
+  jitter: 0.15
+
+eval:
+  splits: [val, seen_test, unseen_test]
+  bootstrap: 1000
+  fuzzy_threshold: 0.8
+  n_qualitative: 12

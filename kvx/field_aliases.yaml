@@ -1,0 +1,35 @@
+# Printed-key vocabulary per gold field, used ONLY for the kv_field_recall metric:
+# a found value counts as correctly keyed when the key the model linked it to contains one of these
+# phrases (case and punctuation ignored, whole-word match). Edit freely; the list is part of the
+# evaluation protocol, so report it with the results. Fields without aliases are excluded from
+# kv_field_recall (their values still count for value_recall).
+
+# ---- VRDU registration forms (FARA)
+registration_num: [registration no, registration number, registration, reg no]
+registrant_name: [name of registrant, registrant]
+foreign_principle_name: [foreign principal, name of foreign principal, principal]
+file_date: [date, date of filing, dated]
+signer_name: [name of individual, name, signature, signed]
+signer_title: [title, position]
+
+# ---- VRDU ad-buy forms (DeepForm)
+advertiser: [advertiser, client, candidate, account]
+agency: [agency, buyer, agency name]
+contract_num: [contract, contract no, contract number, order, order no, order number, estimate, invoice]
+flight_from: [flight, flight dates, start date, from, begin date, schedule dates]
+flight_to: [flight, flight dates, end date, to, schedule dates]
+gross_amount: [gross, gross amount, total, grand total, amount due, gross total]
+product: [product, description, product description]
+property: [station, property, call letters]
+tv_address: []
+channel: [channel, station, network]
+program_desc: [program, programming, description, show]
+program_start_date: [start date, start, from, dates]
+program_end_date: [end date, end, to, dates]
+sub_amount: [amount, rate, cost, net, price]
+
+# ---- SROIE
+company: []
+address: []
+date: [date, tarikh]
+total: [total, amount, grand total, rounded total, jumlah, nett total, total incl]

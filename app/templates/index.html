@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cross-template key-value extraction</title>
+<style>
+  :root{--ink:#1c2230;--muted:#5d6676;--line:#dde1e8;--bg:#f5f6f8;--card:#fff;--accent:#1f4fd1;
+        --key:#d97706;--value:#15803d;--header:#4f46e5;--other:#9ca3af;--miss:#b91c1c}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 24px}
+  h1{margin:0;font-size:18px;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.warn{border-color:#f0c36d;background:#fff8e6;color:#8a5a00}
+  nav{display:flex;gap:4px;padding:0 24px;background:var(--card);border-bottom:1px solid var(--line)}
+  nav button{font:inherit;border:0;background:none;padding:10px 14px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}
+  nav button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  main{padding:18px 24px 60px;max-width:1500px;margin:0 auto}
+  .tab{display:none}.tab.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;color:var(--muted);cursor:pointer;background:var(--card)}
+  .drop.over{border-color:var(--accent);background:#eef3ff}
+  .drop b{color:var(--ink)}
+  .status{margin:10px 2px;color:var(--muted);min-height:20px}
+  .status.err{color:var(--miss)}
+  .viewer{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr);gap:16px;margin-top:12px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .toolbar label{display:flex;gap:5px;align-items:center;cursor:pointer}
+  .sw{width:11px;height:11px;border-radius:2px;display:inline-block;border:1px solid}
+  .sw.key{background:rgba(217,119,6,.45);border-color:var(--key)}
+  .sw.value{background:rgba(21,128,61,.40);border-color:var(--value)}
+  .sw.header{background:rgba(79,70,229,.40);border-color:var(--header)}
+  .sw.other{background:rgba(156,163,175,.25);border-color:var(--other)}
+  .pages{display:flex;gap:4px;margin-left:auto}
+  .pages button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:2px 8px;cursor:pointer}
+  .pages button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .stage{position:relative;line-height:0}
+  .stage img{width:100%;display:block}
+  .layer{position:absolute;inset:0}
+  .wl{position:absolute;border:1px solid transparent;border-radius:1px;pointer-events:none}
+  .wl.key{background:rgba(217,119,6,.28);border-color:var(--key)}
+  .wl.value{background:rgba(21,128,61,.24);border-color:var(--value)}
+  .wl.header{background:rgba(79,70,229,.24);border-color:var(--header)}
+  .wl.other{background:rgba(156,163,175,.10)}
+  .bx{position:absolute;border:2px solid;border-radius:2px;pointer-events:none;opacity:.55}
+  .bx.k{border-color:var(--key)}.bx.v{border-color:var(--value)}
+  .bx.hot{opacity:1;box-shadow:0 0 0 3px rgba(31,79,209,.25)}
+  .bx.k.hot{background:rgba(217,119,6,.18)}.bx.v.hot{background:rgba(21,128,61,.18)}
+  svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .side{display:flex;flex-direction:column;gap:12px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+  th{color:var(--muted);font-weight:500;font-size:12px;position:sticky;top:0;background:var(--card)}
+  td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow-wrap:normal}
+  tr.pair{cursor:default}
+  tr.pair:hover,tr.pair.hot{background:#eef3ff}
+  .nokey{color:var(--muted);font-style:italic}
+  .scroll{max-height:560px;overflow:auto}
+  .sec{padding:10px 14px;font-weight:600;border-bottom:1px solid var(--line)}
+  .found{color:var(--value);font-weight:600}.missed{color:var(--miss);font-weight:600}
+  .note{color:var(--muted);font-size:12px;padding:10px 14px}
+  .scores{display:flex;flex-wrap:wrap;gap:18px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .scores div{font-size:12px;color:var(--muted)}.scores b{display:block;font-size:18px;color:var(--ink)}
+  .ex{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px}
+  .exlist{max-height:720px;overflow:auto}
+  .exlist div{padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+  .exlist div:hover,.exlist div.on{background:#eef3ff}
+  .tag{display:inline-block;font-size:11px;border-radius:4px;padding:0 6px;margin-right:6px;border:1px solid var(--line);color:var(--muted)}
+  .tag.u{border-color:#f0c36d;background:#fff8e6;color:#8a5a00}
+  .muted{color:var(--muted)}
+  .res table td,.res table th{white-space:nowrap}
+  @media (max-width:980px){.viewer,.ex{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cross-template key-value extraction from scanned forms</h1>
+  <div class="chips" id="chips"></div>
+</header>
+<nav>
+  <button data-tab="extract" class="on">Extract</button>
+  <button data-tab="heldout">Held-out examples</button>
+  <button data-tab="results">Results</button>
+</nav>
+<main>
+  <section class="tab on" id="tab-extract">
+    <div class="drop" id="drop"><b>Drop a scanned form here</b> or click to choose &middot; png, jpg, tif, bmp, webp or pdf (every page)
+      <input type="file" id="file" accept="image/*,.pdf,application/pdf,.json" hidden></div>
+    <div class="status" id="status-extract"></div>
+    <div id="view-extract"></div>
+  </section>
+
+  <section class="tab" id="tab-heldout">
+    <div class="ex">
+      <div class="card"><div class="sec">Documents never trained on</div><div class="exlist" id="exlist"></div></div>
+      <div><div class="status" id="status-heldout">Pick a document on the left. VRDU pages are unseen templates; seen_test pages are unseen documents of seen templates.</div>
+        <div id="view-heldout"></div></div>
+    </div>
+  </section>
+
+  <section class="tab res" id="tab-results"><div id="results" class="status">loading ...</div></section>
+</main>
+
+<script>
+const STATE = {{ state|tojson }};
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const f3 = x => x === null || x === undefined ? "–" : Number(x).toFixed(3);
+
+// ---------------------------------------------------------------- header chips
+(function chips(){
+  const c = [];
+  c.push(`<span class="chip">model <b>${esc(STATE.run)}</b> · epoch ${esc(STATE.epoch)}</span>`);
+  if (STATE.val_score !== null && STATE.val_score !== undefined)
+    c.push(`<span class="chip">val ${esc(STATE.select_metric)} <b>${f3(STATE.val_score)}</b></span>`);
+  c.push(`<span class="chip">backbone <b>${esc(STATE.backbone)}</b>${STATE.visual ? " + image" : " (text + layout)"}</span>`);
+  c.push(`<span class="chip">device <b>${esc(STATE.device)}</b></span>`);
+  c.push(`<span class="chip ${STATE.ocr_ok ? "" : "warn"}">OCR <b>${esc(STATE.ocr)}</b></span>`);
+  $("#chips").innerHTML = c.join("");
+})();
+
+// --------------------------------------------------------------------- tabs
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "heldout") loadExamples();
+  if (b.dataset.tab === "results") loadResults();
+});
+
+// ------------------------------------------------------------------ viewer
+function pct(v, total){ return (100 * v / total) + "%"; }
+function place(el, b, W, H){
+  el.style.left = pct(b[0], W); el.style.top = pct(b[1], H);
+  el.style.width = pct(Math.max(1, b[2] - b[0]), W); el.style.height = pct(Math.max(1, b[3] - b[1]), H);
+}
+
+function renderViewer(host, resp){
+  const pages = resp.pages;
+  host.innerHTML = "";
+  if (!pages.length){ host.textContent = "nothing to show"; return; }
+  const wrap = document.createElement("div");
+  host.appendChild(wrap);
+  let cur = 0;
+  const show = i => { cur = i; drawPage(wrap, pages, i, resp.ocr); };
+  show(0);
+}
+
+function drawPage(wrap, pages, idx, ocrName){
+  const P = pages[idx], W = P.width, H = P.height;
+  const roles = ["key","value","header","other"];
+  const pageBtns = pages.length > 1 ? `<div class="pages">${pages.map((p,i)=>`<button data-i="${i}" class="${i===idx?"on":""}">p${i+1}</button>`).join("")}</div>` : "";
+  if (P.empty){
+    wrap.innerHTML = `<div class="card"><div class="toolbar">${pageBtns}</div><div class="note">OCR found no text on this page.</div><div class="stage"><img src="${P.image}"></div></div>`;
+    wrap.querySelectorAll(".pages button").forEach(b => b.onclick = () => drawPage(wrap, pages, +b.dataset.i, ocrName));
+    return;
+  }
+  const counts = P.counts || {};
+  const nKeyed = P.pairs.filter(p => p.key !== null).length;
+  wrap.innerHTML = `
+  <div class="viewer">
+    <div class="card">
+      <div class="toolbar">
+        <label><input type="checkbox" id="t-words"> word labels</label>
+        ${roles.map(r=>`<span><i class="sw ${r}"></i> ${r} <b>${counts[r]||0}</b></span>`).join("")}
+        <label><input type="checkbox" id="t-pairs" checked> pairs</label>
+        ${pageBtns}
+      </div>
+      <div class="stage" id="stage"><img src="${P.image}" alt="page">
+        <div class="layer" id="words-layer" hidden></div>
+        <div class="layer" id="pairs-layer"></div>
+        <svg class="links" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="links"></svg>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div class="meta">
+          <span class="chip">${esc(P.doc_id)}</span>
+          <span class="chip">${P.words.length} words</span>
+          ${ocrName ? `<span class="chip">ocr <b>${P.timing.ocr}s</b></span>` : ""}
+          <span class="chip">model <b>${P.timing.model}s</b></span>
+          <span class="chip">${nKeyed} key-value pairs</span>
+        </div>
+        ${P.gold ? goldBlock(P.gold) : ""}
+        <div class="sec">Extracted pairs <span class="muted" style="font-weight:400">· hover a row to see it on the page</span></div>
+        <div class="scroll"><table><thead><tr><th>key</th><th>value</th><th class="num">p</th></tr></thead><tbody id="pairs-body"></tbody></table></div>
+        <div class="note">${ocrName ? `Read by ${esc(ocrName)}. This upload is a demonstration: the reported numbers use each dataset's own OCR.` : "Words come from the dataset's own annotation / OCR."}</div>
+      </div>
+    </div>
+  </div>`;
+  wrap.querySelectorAll(".pages button").forEach(b => b.onclick = () => drawPage(wrap, pages, +b.dataset.i, ocrName));
+
+  // word-label layer
+  const wl = $("#words-layer", wrap);
+  P.words.forEach(w => { const d = document.createElement("div"); d.className = "wl " + w.r; d.title = `${w.t} · ${w.r} ${f3(w.c)}`; place(d, w.b, W, H); wl.appendChild(d); });
+  $("#t-words", wrap).onchange = e => wl.hidden = !e.target.checked;
+
+  // pair boxes + table
+  const pl = $("#pairs-layer", wrap), svg = $("#links", wrap), body = $("#pairs-body", wrap);
+  const boxes = P.pairs.map((p, i) => {
+    const out = {};
+    if (p.kb){ out.k = document.createElement("div"); out.k.className = "bx k"; place(out.k, p.kb, W, H); pl.appendChild(out.k); }
+    out.v = document.createElement("div"); out.v.className = "bx v"; place(out.v, p.vb, W, H); pl.appendChild(out.v);
+    return out;
+  });
+  $("#t-pairs", wrap).onchange = e => { pl.hidden = !e.target.checked; svg.style.display = e.target.checked ? "" : "none"; };
+  const center = b => [(b[0]+b[2])/2, (b[1]+b[3])/2];
+  P.pairs.forEach((p, i) => {
+    const tr = document.createElement("tr"); tr.className = "pair";
+    tr.innerHTML = `<td>${p.key === null ? '<span class="nokey">(no key found)</span>' : esc(p.key)}</td><td>${esc(p.value)}</td><td class="num">${p.p === null ? "" : f3(p.p)}</td>`;
+    tr.onmouseenter = () => {
+      if (boxes[i].k) boxes[i].k.classList.add("hot"); boxes[i].v.classList.add("hot");
+      if (p.kb){ const [x1,y1] = center(p.kb), [x2,y2] = center(p.vb);
+        svg.innerHTML = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1f4fd1" stroke-width="${Math.max(W,H)/350}" />
+                         <circle cx="${x2}" cy="${y2}" r="${Math.max(W,H)/180}" fill="#1f4fd1" />`; }
+    };
+    tr.onmouseleave = () => { if (boxes[i].k) boxes[i].k.classList.remove("hot"); boxes[i].v.classList.remove("hot"); svg.innerHTML = ""; };
+    body.appendChild(tr);
+  });
+  if (!P.pairs.length) body.innerHTML = `<tr><td colspan="3" class="muted">no values found on this page</td></tr>`;
+}
+
+function goldBlock(g){
+  const sc = Object.entries(g.scores).filter(([k,v]) => v !== null).map(([k,v]) => `<div>${esc(k)}<b>${f3(v)}</b></div>`).join("");
+  const nf = g.items.filter(x => x.found).length;
+  const rows = g.items.map(x => `<tr><td>${esc(x.field || x.key || "")}</td><td>${esc(x.text)}</td><td class="${x.found ? "found" : "missed"}">${x.found ? "found" : "missed"}</td></tr>`).join("");
+  return `<div class="sec">Gold values · ${esc(g.source)} · ${esc(g.split || "")} · template ${esc(g.template || "")} <span class="muted" style="font-weight:400">· ${nf}/${g.items.length} found</span></div>
+    <div class="scores">${sc}</div>
+    <div class="scroll" style="max-height:220px"><table><thead><tr><th>${g.annotation === "full" ? "printed key" : "field"}</th><th>gold value</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ------------------------------------------------------------------- upload
+const drop = $("#drop"), input = $("#file");
+drop.onclick = () => input.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
+input.onchange = () => { if (input.files[0]) upload(input.files[0]); };
+
+async function upload(file){
+  const st = $("#status-extract"); st.className = "status"; st.textContent = `reading ${file.name} (OCR + model) ...`;
+  const fd = new FormData(); fd.append("file", file);
+  try{
+    const r = await fetch("/api/extract", {method:"POST", body:fd}); const j = await r.json();
+    if (!r.ok || j.error){ st.className = "status err"; st.textContent = j.error || ("error " + r.status); return; }
+    st.textContent = `${file.name}: ${j.pages.length} page(s)`;
+    renderViewer($("#view-extract"), j);
+  } catch(e){ st.className = "status err"; st.textContent = String(e); }
+}
+
+// ----------------------------------------------------------------- examples
+let examplesLoaded = false;
+async function loadExamples(){
+  if (examplesLoaded) return; examplesLoaded = true;
+  const j = await (await fetch("/api/examples")).json();
+  const list = $("#exlist");
+  if (!j.examples.length){ list.innerHTML = `<div class="muted">no held-out documents found</div>`; return; }
+  list.innerHTML = j.examples.map(e => `<div data-id="${esc(e.doc_id)}"><span class="tag ${e.split==="unseen_test"?"u":""}">${esc(e.split==="unseen_test"?"unseen template":"seen template")}</span>${esc(e.source)}<br><span class="muted">${esc(e.doc_id)}</span></div>`).join("");
+  list.querySelectorAll("div[data-id]").forEach(d => d.onclick = async () => {
+    list.querySelectorAll("div").forEach(x => x.classList.remove("on")); d.classList.add("on");
+    const st = $("#status-heldout"); st.className = "status"; st.textContent = "running the model ...";
+    const r = await fetch("/api/example", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({doc_id:d.dataset.id})});
+    const j2 = await r.json();
+    if (!r.ok || j2.error){ st.className = "status err"; st.textContent = j2.error; return; }
+    st.textContent = "";
+    renderViewer($("#view-heldout"), j2);
+  });
+}
+
+// ------------------------------------------------------------------ results
+let resultsLoaded = false;
+async function loadResults(){
+  if (resultsLoaded) return; resultsLoaded = true;
+  const j = await (await fetch("/api/metrics")).json(), host = $("#results");
+  if (!j.metrics){ host.innerHTML = `No evaluation yet - run <code>python scripts\\05_evaluate.py --run ${esc(STATE.run)}</code>.`; return; }
+  const M = j.metrics, H = j.headline;
+  const ci = c => c ? `<br><span class="muted" style="font-size:11px">[${f3(c[0])}, ${f3(c[1])}]</span>` : "";
+  let html = `<div class="card"><div class="sec">Seen vs unseen templates · checkpoint epoch ${esc(M.checkpoint_epoch)}</div><div class="scroll" style="max-height:none"><table>
+    <thead><tr><th>split</th><th class="num">docs</th><th class="num">templates</th>${H.map(h=>`<th class="num">${esc(h)}</th>`).join("")}</tr></thead><tbody>`;
+  for (const [sp, s] of Object.entries(M.splits))
+    html += `<tr><td>${esc(sp)}</td><td class="num">${s.n_docs}</td><td class="num">${s.n_templates}</td>${H.map(h=>`<td class="num">${f3(s[h])}${ci((s.ci95||{})[h])}</td>`).join("")}</tr>`;
+  html += `</tbody></table></div><div class="note">– = not measurable on those documents (VRDU and SROIE annotate values only, no keys or links). Brackets: 95% CI over templates.</div></div>`;
+  if (M.gap && Object.keys(M.gap).length){
+    html += `<div class="card" style="margin-top:14px"><div class="sec">Generalisation gap (seen − unseen)</div><table><thead><tr><th>metric</th><th class="num">seen</th><th class="num">unseen</th><th class="num">gap</th><th class="num">95% CI</th><th class="num">relative drop</th></tr></thead><tbody>`;
+    for (const [m, g] of Object.entries(M.gap))
+      html += `<tr><td>${esc(m)}</td><td class="num">${f3(g.seen)}</td><td class="num">${f3(g.unseen)}</td><td class="num">${(g.gap>=0?"+":"")+f3(g.gap)}</td><td class="num">${g.gap_ci95?`[${f3(g.gap_ci95[0])}, ${f3(g.gap_ci95[1])}]`:"–"}</td><td class="num">${g.relative_drop===null?"–":(100*g.relative_drop).toFixed(1)+"%"}</td></tr>`;
+    html += `</tbody></table></div>`;
+  }
+  html += `<div class="card" style="margin-top:14px"><div class="sec">Per source</div><div class="scroll" style="max-height:none"><table><thead><tr><th>split</th><th>source</th><th class="num">docs</th>${H.map(h=>`<th class="num">${esc(h)}</th>`).join("")}<th class="num">values / page</th></tr></thead><tbody>`;
+  for (const [sp, s] of Object.entries(M.splits))
+    for (const [so, m] of Object.entries(s.per_source))
+      html += `<tr><td>${esc(sp)}</td><td>${esc(so)}</td><td class="num">${m.n_docs}</td>${H.map(h=>`<td class="num">${f3(m[h])}</td>`).join("")}<td class="num">${m.pred_values_per_doc===null?"–":m.pred_values_per_doc.toFixed(1)}</td></tr>`;
+  html += `</tbody></table></div></div>`;
+  const U = M.splits.unseen_test;
+  if (U && U.fields && Object.keys(U.fields).length){
+    html += `<div class="card" style="margin-top:14px"><div class="sec">Unseen templates · recall per field</div><table><thead><tr><th>field</th><th class="num">value recall</th><th class="num">key-matched recall</th><th class="num">n</th></tr></thead><tbody>`;
+    for (const [f, v] of Object.entries(U.fields)){ const kv = (U.kv_fields||{})[f];
+      html += `<tr><td>${esc(f)}</td><td class="num">${f3(v.recall)}</td><td class="num">${kv?f3(kv.recall):"–"}</td><td class="num">${v.n}</td></tr>`; }
+    html += `</tbody></table></div>`;
+  }
+  host.className = ""; host.innerHTML = html;
+}
+</script>
+</body>
+</html>
