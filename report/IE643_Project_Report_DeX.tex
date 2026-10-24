@@ -108,6 +108,11 @@ with negative results. Section~\ref{sec:results} presents the results.
 Section~\ref{sec:novelty} gives the plan for novelty assessment, and
 Section~\ref{sec:conclusion} concludes.
 
+\textbf{Code and trained models.} The complete source, configuration and this report are at
+\url{https://github.com/MudiamSukesh/cross-template-kv-extraction}. The four trained
+checkpoints are published as release assets at
+\url{https://github.com/MudiamSukesh/cross-template-kv-extraction/releases/tag/v1.0}.
+
 %% ================================================================= 2. WORKFLOW
 \section{Project Workflow}
 \label{sec:workflow}
@@ -400,7 +405,7 @@ positions.
 \node[b,below=of in] (bb) {LayoutLMv3-base\\12 layers, $d=768$\\126.0M params};
 \node[h,below left=9mm and 4mm of bb] (tag) {Head 1: tagger\\$7$ tags/word\\5.4K params};
 \node[h,below right=9mm and 4mm of bb] (lnk) {Head 2: link scorer\\softmax over keys\\695K params};
-\node[b,below=20mm of bb,text width=46mm] (out) {key-value pairs, each with $p$};
+\node[b,below=34mm of bb,text width=46mm] (out) {key-value pairs, each with $p$};
 \node[draw,dashed,rounded corners,right=4mm of lnk,text width=26mm,font=\small,align=center]
      (geo) {12 relative geometry features (scale \& shift invariant)};
 \draw[->] (in)--(bb);
@@ -412,6 +417,58 @@ positions.
 tagger sees LayoutLMv3's absolute coordinates and is regularised by augmentation instead.}
 \label{fig:arch}
 \end{figure}
+
+\subsection{The interface}
+\label{sec:interface}
+
+The deliverable includes a web application so that the method can be exercised on a document the
+model has never seen, rather than only through evaluation scripts. It is a Flask server started
+with \code{python app\textbackslash app.py --run runs\textbackslash base} and served at
+\code{127.0.0.1:5000}.
+
+\textbf{Methodology.} The design constraint is that the interface must run the \emph{same} code
+path as the evaluation, so that what a user sees cannot diverge from what is reported. It
+therefore imports the identical \code{kvx} modules: the same OCR wrapper, the same encoder, the
+same checkpoint, the same decoding. Nothing is reimplemented for display. The model and the OCR
+networks are loaded once at start-up and held resident; requests are served one at a time, because
+a single GPU cannot safely run concurrent inference.
+
+An upload is handled as follows. The file is accepted only if it is an image, a PDF, or one of the
+annotation formats the loaders understand; anything else is rejected with HTTP 400 rather than
+being guessed at. A PDF is rendered to page images at 144~dpi with \code{pypdfium2}. Each page
+then goes through docTR, the chunker, the backbone and the two heads exactly as in
+Section~\ref{sec:after}, and the resulting spans and links are serialised into a per-page payload
+holding every word with its box, role and confidence; every predicted pair with its key box, value
+box and link probability $p$; and the OCR and model timings.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{@{}p{3.1cm}p{10.3cm}@{}}
+\toprule
+\textbf{View} & \textbf{What it does} \\
+\midrule
+Extract & Accepts a dropped image or PDF and draws the extracted pairs on the rendered page.
+Hovering a row highlights that key, that value and the link between them. A toggleable layer
+colours every word by predicted role with per-role counts, which exposes tagger behaviour rather
+than only the final pairs. Multi-page PDFs get page buttons. \\
+Held-out examples & Serves pages the model was never trained on --- VRDU documents from unseen
+templates, and seen-template test documents --- with every gold value marked found or missed by
+the same matching function the metrics use, so the displayed verdict and the reported number
+cannot disagree. \\
+Results & Renders \code{metrics.json} from the evaluation run directly: seen versus unseen with
+95\% intervals, the gap, per source and per field. It displays the measured file and computes
+nothing of its own. \\
+\bottomrule
+\end{tabular}
+\caption{The three views of the interface.}
+\label{tab:interface}
+\end{table}
+
+The header reports which checkpoint, backbone, device and OCR models are live, and says so
+explicitly when the PARSeq recogniser weights are absent and the cached CRNN fallback is in use ---
+a silent fallback would otherwise make OCR quality look like model quality. Values that won no key
+are listed as \code{(no key found)} rather than being dropped, which keeps the display honest
+about what the model did and did not link.
 
 %% ==================================================================== 5. DATA
 \section{Data set Details}
@@ -438,9 +495,20 @@ VRDU         & \textbf{test only} & 2{,}556 & 1{,}100 & values only, with a type
 \label{tab:data}
 \end{table}
 
-\textbf{Procurement.} FUNSD is distributed by the authors of~\cite{funsd}; SROIE is the ICDAR
-2019 Task~3 release~\cite{sroie}; WildReceipt accompanies~\cite{sdmgr}; VRDU is published by
-Google Research~\cite{vrdu}. All are public research datasets.
+\textbf{Procurement.} All four are public research datasets, obtained from:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=0pt]
+  \item FUNSD~\cite{funsd} --- \url{https://guillaumejaume.github.io/FUNSD/}
+  \item SROIE~\cite{sroie}, ICDAR 2019 Robust Reading Challenge Task~3 ---
+        \url{https://rrc.cvc.uab.es/?ch=13}
+  \item WildReceipt~\cite{sdmgr}, distributed with MMOCR ---
+        \url{https://download.openmmlab.com/mmocr/data/wildreceipt.tar}
+  \item VRDU~\cite{vrdu}, Google Research ---
+        \url{https://github.com/google-research-datasets/vrdu}
+\end{itemize}
+
+None is redistributed with our code; the repository documents these sources and the build scripts
+consume whatever is placed in \code{data/}.
 
 \textbf{Unified schema.} Every loader emits the same page-level record: a document id, a source
 tag, the page image path and size, a list of words with their boxes, a list of entities with a
@@ -477,8 +545,11 @@ inside the training entry point, so a leak cannot survive to a reported number.
 \section{Experiments}
 \label{sec:exp}
 
-\textbf{Hardware and software.} Windows 11, a single CUDA GPU, PyTorch with bfloat16 automatic
-mixed precision, Python 3.13. One run of the base configuration takes roughly two hours.
+\textbf{Hardware and software.} A single NVIDIA GeForce RTX 5060 Laptop GPU under Windows 11,
+with PyTorch 2.11 built against CUDA 12.8, bfloat16 automatic mixed precision, and Python 3.13.
+One run of the base configuration takes roughly two hours; a full evaluation over all three splits
+takes about twenty minutes, and the VRDU benchmark scoring runs from saved predictions in about a
+minute without loading the model.
 
 \textbf{Training configuration.} LayoutLMv3-base backbone (126.0M parameters) plus 0.70M head
 parameters; maximum 512 tokens per chunk with chunk boundaries placed only between units, so no
@@ -491,7 +562,12 @@ sampled equally per epoch, so that WildReceipt's 1{,}231 training documents do n
 
 \subsection{Every experiment performed}
 
-\begin{table}[htbp]
+Table~\ref{tab:experiments} lists every configuration that was trained or scored during the
+project, including the approach that was abandoned and the four ablations that remain unrun. Each
+entry is one line of configuration away from the base run, which is what makes the comparisons in
+Section~\ref{sec:ablations} interpretable.
+
+\begin{table}[!htb]
 \centering\small
 \begin{tabular}{@{}p{3.6cm}lp{7.0cm}@{}}
 \toprule
@@ -731,6 +807,21 @@ inside the base interval, and unseen value recall is in fact marginally \emph{hi
 augmentation (0.703 against 0.695). Scale, shift and jitter make no measurable difference on this
 test set. They cost nothing and are kept on the argument given in Section~\ref{sec:after} rather
 than on evidence, and that is a weaker footing than the geometry claim.
+
+\subsection{Qualitative results}
+
+Numbers alone do not show whether a prediction is sensible, so three artefacts are produced
+alongside them. Step~3 renders gold annotations onto sample pages, which is how the template
+clustering threshold was fixed by eye. Step~5 writes a \code{qualitative/} directory per run
+holding predicted pages with key and value boxes drawn and each link joined, sampled from both the
+seen and the unseen splits. Step~6 writes an \code{errors/} directory containing the individual
+failure cases behind each error category in the tables above, so that a claim such as ``wrong key,
+nearer than gold'' can be checked against the page that produced it.
+
+The interface of Section~\ref{sec:interface} is the interactive form of the same thing: its
+held-out examples view marks every gold value found or missed on documents from unseen templates,
+using the same matching function as the metrics, and its extract view shows the model's output on
+a document supplied by the user.
 
 \subsection{What limits generalisation}
 \label{sec:limits}
