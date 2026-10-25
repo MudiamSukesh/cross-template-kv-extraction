@@ -48,20 +48,25 @@ This report describes a document-understanding system that extracts key-value fi
 scanned forms and is evaluated on form templates for which it has seen \emph{zero} training
 examples. The task is posed without a schema: rather than being told which fields to look for,
 the model tags every word with a role (key, value, header or none) and then decides, for each
-value, which key on the page it answers. Both decisions are made by two small heads on a shared
-LayoutLMv3 backbone, trained jointly with a tagging loss and a per-value softmax linking loss.
+value, which key on the page it answers. Both decisions are made by two small heads on a shared LayoutLMv3 backbone that reads the words,
+their boxes and the page image, trained jointly with a tagging loss and a per-value softmax
+linking loss.
 The central design choice is that the linking head sees geometry only as \emph{relative}
 offsets in a scale-invariant frame, which we prove is invariant to translation and scaling of
 the page, and which an ablation shows is what makes the representation transfer. Training uses
 FUNSD, SROIE and WildReceipt under a template-level split with explicit leakage assertions;
-VRDU is held out entirely and never trained on. On unseen templates the system reaches
-0.695 value recall against 0.918 on seen templates, and scores 0.593 micro F1 on VRDU's own
-benchmark-style field metric with no VRDU training data at all. A second split that holds out
-in-domain templates shows that entity, link and end-to-end pair F1 do \emph{not} degrade on
-unseen templates --- every gap interval contains zero --- establishing that the headline gap is
-domain shift rather than template novelty. A failure analysis isolates the two structural
-assumptions that break: that a key sits beside its value, and that every value carries a
-printed label.
+VRDU is held out entirely and never trained on. On unseen templates the final system reaches
+0.713 value recall against 0.928 on seen templates, and under VRDU's own benchmark-style field
+metric scores 0.541 micro F1 on registration forms and 0.538 unrepeated F1 on ad-buy forms, with
+no VRDU training data at all. The page-image stream is switched on in the final system. Against
+the otherwise identical text-and-layout model it raises unseen value recall (0.695 to 0.713) and
+ad-buy F1 (0.497 to 0.538) but lowers registration-form F1 (0.593 to 0.541); each is a single run,
+so the report claims a direction and not a significant difference. A second split that holds out
+in-domain templates, measured on the text-and-layout model, shows that entity, link and
+end-to-end pair F1 do \emph{not} degrade on unseen templates --- every gap interval contains zero
+--- establishing that the headline gap is domain shift rather than template novelty. A failure
+analysis isolates the two structural assumptions that break: that a key sits beside its
+value, and that every value carries a printed label.
 \end{minipage}
 \end{center}
 
@@ -108,10 +113,12 @@ with negative results. Section~\ref{sec:results} presents the results.
 Section~\ref{sec:novelty} gives the plan for novelty assessment, and
 Section~\ref{sec:conclusion} concludes.
 
+\begin{sloppypar}
 \textbf{Code and trained models.} The complete source, configuration and this report are at
 \url{https://github.com/MudiamSukesh/cross-template-kv-extraction}. The four trained
 checkpoints are published as release assets at
 \url{https://github.com/MudiamSukesh/cross-template-kv-extraction/releases/tag/v1.0}.
+\end{sloppypar}
 
 %% ================================================================= 2. WORKFLOW
 \section{Project Workflow}
@@ -132,7 +139,7 @@ checkpoints are published as release assets at
   \item \textbf{Template induction and splitting.} Cluster documents into templates by layout
         signature, then split \emph{templates} (not documents) into train, validation, seen test
         and unseen test, with leakage assertions.
-  \item \textbf{Modelling.} LayoutLMv3 backbone; a BIO role tagger; a link scorer using relative
+  \item \textbf{Modelling.} LayoutLMv3 backbone with its page-image stream enabled; a BIO role tagger; a link scorer using relative
         geometry; joint training with two losses.
   \item \textbf{Evaluation.} Seen-versus-unseen gap with template-level bootstrap intervals;
         VRDU's own benchmark-style field scoring; per-field and per-source breakdowns.
@@ -393,6 +400,24 @@ shift, and per-word jitter of 0.15 word heights. The intent is to prevent the \e
 which, unlike the link head, does see LayoutLMv3's absolute coordinates --- from memorising
 positions.
 
+\textbf{The page image: used by the final model.} LayoutLMv3 is a multimodal backbone, and the
+delivered configuration (\code{runs\textbackslash visual}, \code{model.visual=true}) runs its image
+stream. Besides \code{input\_ids}, \code{bbox} and \code{attention\_mask}, the backbone receives the
+page image as \code{pixel\_values}, so the patch-embedding branch runs and the text tokens can
+attend to image patches. ``Layout'' in this report therefore means bounding-box geometry
+\emph{and} appearance: the model can see the logo, the shading and the ruling lines, which are the
+most template-specific signals a form carries. The two heads are unchanged. Both read the
+backbone's hidden states, so both receive appearance cues through them; the link head's twelve
+geometry features remain purely relative and are computed from the boxes alone, never from pixels.
+
+The first design left the image off, on the reasoning that appearance is exactly the kind of cue a
+model can memorise per template and would therefore hurt transfer. That reasoning was tested
+rather than assumed, and Section~\ref{sec:ablations} reports that it did not hold: with the image
+on, value recall rose on seen and on unseen templates. The text-and-layout configuration
+(\code{runs\textbackslash base}, image off) is kept as the baseline against which every other
+ablation is measured, and is released alongside the final model. Pixels also enter the system, as
+before, through docTR, which reads them to produce the words and boxes.
+
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
@@ -401,7 +426,7 @@ positions.
   h/.style={b,fill=blue!8,draw=blue!55,thick},
   >={Stealth[length=2mm]}
 ]
-\node[b] (in) {words + boxes\\(+ optional image)};
+\node[b] (in) {words + boxes\\+ page image};
 \node[b,below=of in] (bb) {LayoutLMv3-base\\12 layers, $d=768$\\126.0M params};
 \node[h,below left=9mm and 4mm of bb] (tag) {Head 1: tagger\\$7$ tags/word\\5.4K params};
 \node[h,below right=9mm and 4mm of bb] (lnk) {Head 2: link scorer\\softmax over keys\\695K params};
@@ -423,7 +448,7 @@ tagger sees LayoutLMv3's absolute coordinates and is regularised by augmentation
 
 The deliverable includes a web application so that the method can be exercised on a document the
 model has never seen, rather than only through evaluation scripts. It is a Flask server started
-with \code{python app\textbackslash app.py --run runs\textbackslash base} and served at
+with \code{python app\textbackslash app.py --run runs\textbackslash visual} and served at
 \code{127.0.0.1:5000}.
 
 \textbf{Methodology.} The design constraint is that the interface must run the \emph{same} code
@@ -547,7 +572,7 @@ inside the training entry point, so a leak cannot survive to a reported number.
 
 \textbf{Hardware and software.} A single NVIDIA GeForce RTX 5060 Laptop GPU under Windows 11,
 with PyTorch 2.11 built against CUDA 12.8, bfloat16 automatic mixed precision, and Python 3.13.
-One run of the base configuration takes roughly two hours; a full evaluation over all three splits
+One run of the no-image base configuration takes roughly two hours; a full evaluation over all three splits
 takes about twenty minutes, and the VRDU benchmark scoring runs from saved predictions in about a
 minute without loading the model.
 
@@ -558,7 +583,8 @@ learning rate $3\times10^{-5}$, head learning rate $3\times10^{-4}$ and weight d
 excluding biases and LayerNorm; 10\% warmup then linear decay; gradient clipping at 1.0; up to 20
 epochs with early stopping at patience 5 on the mean of the validation metrics. Sources are
 sampled equally per epoch, so that WildReceipt's 1{,}231 training documents do not drown FUNSD's
-126. The base run selected epoch 16.
+126. The no-image base run selected epoch 16. The final model uses the identical configuration with
+only \code{model.visual} switched on.
 
 \subsection{Every experiment performed}
 
@@ -574,11 +600,12 @@ Section~\ref{sec:ablations} interpretable.
 \textbf{Experiment} & \textbf{Status} & \textbf{Purpose / outcome} \\
 \midrule
 Query-based extractor & \textbf{negative; abandoned} & Section~\ref{sec:negative} \\
-\code{runs\textbackslash base} & complete & the reported system \\
+\code{runs\textbackslash base} & complete & the no-image baseline, and the reference for every ablation \\
 \code{runs\textbackslash unseen15} & complete & holds out in-domain templates so that entity,
 link and end-to-end F1 become measurable on unseen templates \\
 \code{runs\textbackslash absgeom} & complete & absolute instead of relative link geometry \\
 \code{runs\textbackslash noaug} & complete & augmentation disabled \\
+\code{runs\textbackslash visual} & complete & \textbf{the reported system}: the LayoutLMv3 image stream enabled \\
 VRDU through our own OCR & complete & tests the gold-OCR assumption \\
 VRDU benchmark scoring & complete & re-scores saved predictions under VRDU's own protocol \\
 \code{nogeom}, \code{nobalance}, \code{nosroie}, \code{segment} & not run & listed in
@@ -642,6 +669,44 @@ VRDU and SROIE annotate values only. A metric those corpora cannot support is pr
 about the data. All intervals are 95\% bootstrap intervals that resample \emph{templates}, since
 documents of one template are not independent observations.
 
+\subsection{The reported system against its no-image baseline}
+\label{sec:reported}
+
+The delivered model is the image-stream run (\code{runs\textbackslash visual}). Its baseline is
+\code{runs\textbackslash base}, identical except that the image stream is off.
+Table~\ref{tab:final} sets the two side by side on every measure available for both. Each is a
+single run. Every table in this section and Figure~\ref{fig:perfield} describe the final model.
+Where a no-image figure is given for comparison it is named explicitly. The \code{unseen15} run of
+Section~\ref{sec:unseen15} and the \code{absgeom} and \code{noaug} ablations were trained with the
+image stream off and are labelled as such throughout.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Measure} & \textbf{Final model (image on)} & \textbf{No-image base} \\
+\midrule
+Seen value recall                          & \textbf{0.928} & 0.918 \\
+Unseen value recall (VRDU, pooled)         & \textbf{0.713} & 0.695 \\
+Seen-minus-unseen gap                      & $\mathbf{+0.215}$ & $+0.223$ \\
+Unseen value recall, registration-form     & \textbf{0.692} & 0.654 \\
+Unseen value recall, ad-buy-form           & \textbf{0.720} & 0.709 \\
+Registration-form micro F1 [95\% CI]       & 0.541 [0.454, 0.587] & \textbf{0.593} [0.567, 0.616] \\
+Ad-buy-form unrepeated F1                  & \textbf{0.538} & 0.497 \\
+Ad-buy-form macro F1                       & \textbf{0.453} & 0.420 \\
+\bottomrule
+\end{tabular}
+\caption{The final model against its no-image baseline. Bold marks the better value in each row;
+the gap row is better when smaller.}
+\label{tab:final}
+\end{table}
+
+Value recall, the headline metric of Section~\ref{sec:metrics}, is higher with the image on in
+every row that reports it: seen, unseen, and both held-out corpora. The pooled unseen figure is
+dominated by ad-buy-form, which supplies 27{,}197 of the 36{,}026 unseen gold values, and that is
+where the image helps most; registration-form supplies 8{,}829 and is where the image costs.
+Section~\ref{sec:ablations} examines the two corpora separately and the field-level mechanism.
+
 \subsection{Seen versus unseen templates}
 
 \begin{table}[htbp]
@@ -651,12 +716,12 @@ documents of one template are not independent observations.
 \textbf{Split} & \textbf{Docs} & \textbf{Tmpl} & \textbf{value\_rec} &
 \textbf{kv\_field\_rec} & \textbf{entity\_f1} & \textbf{link\_f1} & \textbf{e2e\_pair\_f1} \\
 \midrule
-val                & 310   & 197   & 0.946 & 0.728 & 0.933 & 0.940 & 0.814 \\
-seen\_test         & 280   & 197   & 0.918 & 0.648 & 0.914 & 0.935 & 0.769 \\
-unseen\_test (VRDU)& 4{,}991 & 1{,}100 & 0.695 & 0.511 & -- & -- & -- \\
+val                & 310   & 197   & 0.950 & 0.754 & 0.932 & 0.936 & 0.802 \\
+seen\_test         & 280   & 197   & 0.928 & 0.694 & 0.915 & 0.926 & 0.777 \\
+unseen\_test (VRDU)& 4{,}991 & 1{,}100 & 0.713 & 0.495 & -- & -- & -- \\
 \bottomrule
 \end{tabular}
-\caption{The base run. Unseen test is VRDU in its entirety.}
+\caption{The final model (\code{runs\textbackslash visual}). Unseen test is VRDU in its entirety.}
 \label{tab:main}
 \end{table}
 
@@ -667,11 +732,14 @@ unseen\_test (VRDU)& 4{,}991 & 1{,}100 & 0.695 & 0.511 & -- & -- & -- \\
 \textbf{Metric} & \textbf{Seen} & \textbf{Unseen} & \textbf{Gap} & \textbf{95\% CI} &
 \textbf{Relative drop} \\
 \midrule
-value\_recall    & 0.918 & 0.695 & $+0.223$ & $[+0.188, +0.253]$ & 24.3\% \\
-kv\_field\_recall& 0.648 & 0.511 & $+0.137$ & $[+0.012, +0.273]$ & 21.1\% \\
+value\_recall    & 0.928 & 0.713 & $+0.215$ & $[+0.185, +0.240]$ & 23.2\% \\
+kv\_field\_recall& 0.694 & 0.495 & $+0.199$ & $[+0.090, +0.318]$ & 28.7\% \\
 \bottomrule
 \end{tabular}
-\caption{The generalisation gap of the base run.}
+\caption{The generalisation gap of the final model. The value-recall gap is narrower than the
+no-image run's $+0.223$, but the \code{kv\_field\_recall} gap is \emph{wider} ($+0.137$ for the
+no-image run): the image stream finds more values on unseen templates and names a smaller share
+of them.}
 \label{tab:gap}
 \end{table}
 
@@ -680,7 +748,7 @@ kv\_field\_recall& 0.648 & 0.511 & $+0.137$ & $[+0.012, +0.273]$ & 21.1\% \\
 
 Table~\ref{tab:main} cannot fill its last three columns because every held-out template comes
 from VRDU. Re-splitting with 15\% of FUNSD and WildReceipt templates held out and retraining
-(\code{runs\textbackslash unseen15}) fills them, and the result is the most important in this
+(\code{runs\textbackslash unseen15}, trained without the image stream) fills them, and the result is the most important in this
 report.
 
 \begin{table}[htbp]
@@ -731,41 +799,49 @@ The error breakdown agrees: 94.6\% of gold-linked values take the right key on s
 \subsection{VRDU benchmark-style field scores}
 
 Re-scoring the saved predictions under VRDU's own type-specific matching and its
-precision/recall/F1 definition, with no VRDU training data of any kind, gives
-\textbf{0.593 micro F1} on registration-form (micro P 0.656, R 0.541, CI $[0.567, 0.616]$) and
-\textbf{0.497 unrepeated F1} on ad-buy-form. Per field, \code{registration\_num} reaches 0.920 F1
-and \code{registrant\_name} 0.789, while \code{signer\_title} scores 0.002 and \code{line\_item}
-0.005.
+precision/recall/F1 definition, with no VRDU training data of any kind, gives the final model
+\textbf{0.541 micro F1} on registration-form (CI $[0.454, 0.587]$) and \textbf{0.538 unrepeated
+F1} on ad-buy-form (macro F1 0.453). The no-image base run, scored the same way, gives 0.593 micro
+F1 on registration-form (micro P 0.656, R 0.541, CI $[0.567, 0.616]$) and 0.497 unrepeated F1 on
+ad-buy-form. Per field, the final model reaches 0.888 F1 on \code{registration\_num} and 0.560 on
+\code{registrant\_name} (0.920 and 0.789 in the no-image run), while \code{signer\_title} scores
+0.000 and \code{line\_item} 0.005.
 
-The \code{unseen15} run of Section~\ref{sec:unseen15} scores lower on the same metric ---
-0.516 micro F1 $[0.437, 0.542]$ on registration-form and 0.456 unrepeated F1 on ad-buy-form ---
-which is the expected cost of the 377 training documents it gives up in order to make the
-structural metrics measurable. The two runs answer different questions and neither supersedes
-the other: the base run is the system, and \code{unseen15} is the instrument that separates
-template novelty from domain novelty.
+The \code{unseen15} run of Section~\ref{sec:unseen15}, which also has the image off, scores lower
+on the same metric --- 0.516 micro F1 $[0.437, 0.542]$ on registration-form and 0.456 unrepeated
+F1 on ad-buy-form --- which is the expected cost of the 377 training documents it gives up in
+order to make the structural metrics measurable. The runs answer different questions:
+\code{runs\textbackslash visual} is the delivered system, \code{runs\textbackslash base} its
+no-image baseline, and \code{unseen15} the instrument that separates template novelty from domain
+novelty.
 
 \subsection{Per-field behaviour: finding is not keying}
 
 \begin{figure}[!htb]
 \centering
 \includegraphics[width=0.90\textwidth]{perfield.pdf}
-\caption{VRDU per-field recall on unseen templates, base run, both corpora pooled. The upper bar
-is value recall (the text was found); the lower bar is key-matched recall (found \emph{and}
-correctly named). The distance between them is the share of values the model located but could
-not name. \code{tv\_address} has no alias mapping and so has no key-matched bar.}
+\caption{VRDU per-field recall on unseen templates, final model (image stream on), both corpora
+pooled. The upper bar is value recall (the text was found); the lower bar is key-matched recall
+(found \emph{and} correctly named). The distance between them is the share of values the model
+located but could not name. \code{tv\_address} has no alias mapping and so has no key-matched bar.}
 \label{fig:perfield}
 \end{figure}
 
 Three bands are visible in Figure~\ref{fig:perfield}. Fields with one stable printed label ---
-\code{registration\_num} (93/92), \code{contract\_num} (84/83), \code{file\_date} (75/74),
-\code{advertiser} (68/66) --- have bars within three points of each other: once found, they are
-named correctly. Table columns collapse: \code{channel} falls from 0.777 to 0.218,
-\code{sub\_amount} from 0.955 to 0.558, \code{gross\_amount} from 0.977 to 0.690. Values with no
-printed label at all are never found in the first place: \code{signer\_title} 0.078,
-\code{tv\_address} 0.138, \code{signer\_name} 0.246.
+\code{registration\_num} (88/87), \code{contract\_num} (82/82), \code{file\_date} (76/76),
+\code{advertiser} (75/70) --- have bars within five points of each other: once found, they are
+named correctly. Table columns collapse: \code{channel} falls from 0.787 to 0.250,
+\code{sub\_amount} from 0.867 to 0.462, \code{gross\_amount} from 0.959 to 0.738. Values with no
+printed label at all are never found in the first place: \code{signer\_title} 0.084,
+\code{tv\_address} 0.251, \code{signer\_name} 0.351.
 
 \subsection{Ablations}
 \label{sec:ablations}
+
+Every row of Table~\ref{tab:ablations} is one configuration key away from the no-image base run.
+The \code{absgeom} and \code{noaug} runs were trained with the image stream off, so their effects
+are measured on the no-image configuration and were not repeated on the final model. The
+\code{visual} row is the final model.
 
 \begin{table}[htbp]
 \centering\small
@@ -774,12 +850,13 @@ printed label at all are never found in the first place: \code{signer\_title} 0.
 \textbf{Run} & \textbf{Seen} & \textbf{Unseen} & \textbf{Gap} &
 \textbf{FARA F1 [95\% CI]} & \textbf{DeepForm F1} \\
 \midrule
-base (relative geometry + aug.)       & 0.918 & 0.695 & $+0.223$ & \textbf{0.593} $[0.567, 0.616]$ & \textbf{0.497} \\
+base (no image)                       & 0.918 & 0.695 & $+0.223$ & \textbf{0.593} $[0.567, 0.616]$ & \textbf{0.497} \\
 \code{absgeom} (absolute geometry)    & \textbf{0.938} & 0.671 & $+0.267$ & 0.541 $[0.452, 0.593]$ & 0.484 \\
-\code{noaug} (no augmentation)        & 0.933 & \textbf{0.703} & $+0.230$ & 0.571 $[0.524, 0.608]$ & 0.478 \\
+\code{noaug} (no augmentation)        & 0.933 & 0.703 & $+0.230$ & 0.571 $[0.524, 0.608]$ & 0.478 \\
+\code{visual} (image on, final)       & 0.928 & \textbf{0.713} & $\mathbf{+0.215}$ & 0.541 $[0.454, 0.587]$ & \textbf{0.538} \\
 \bottomrule
 \end{tabular}
-\caption{Ablations. Seen and unseen columns are value recall.}
+\caption{Ablations. The base run uses relative geometry and augmentation with the image stream off; the \code{visual} row adds the image stream and is the final model. Seen and unseen columns are value recall.}
 \label{tab:ablations}
 \end{table}
 
@@ -808,6 +885,43 @@ augmentation (0.703 against 0.695). Scale, shift and jitter make no measurable d
 test set. They cost nothing and are kept on the argument given in Section~\ref{sec:after} rather
 than on evidence, and that is a weaker footing than the geometry claim.
 
+\textbf{\code{visual} did not behave as predicted, and the result is the most surprising in the
+project.} The expectation, by analogy with \code{absgeom}, was that the page image would help
+in-domain and hurt on unseen templates, because appearance is highly template-specific. Instead it
+improved \emph{both}: seen value recall 0.928 against 0.918, unseen 0.713 against 0.695, and a gap
+of $+0.215$ that is marginally narrower rather than wider. Both held-out corpora gained
+independently (FARA 0.654 $\to$ 0.692, DeepForm 0.709 $\to$ 0.720), so it is not one corpus
+carrying the result.
+
+The field-level picture is split, and that is where the mechanism shows. On \textbf{ad-buy-form}
+the image stream is clearly better --- unrepeated F1 0.538 against 0.497, macro F1 0.453 against
+0.420, with \code{advertiser} rising from 0.548 to 0.628 and \code{contract\_num} from 0.577 to
+0.643. On \textbf{registration-form} it is clearly worse --- 0.541 against 0.593, driven almost
+entirely by \code{registrant\_name} collapsing from 0.789 to 0.560. The gains concentrate on
+fields with weak or absent printed labels (\code{foreign\_principle\_name} value recall 0.352
+$\to$ 0.568, \code{agency} 0.572 $\to$ 0.738, \code{tv\_address} 0.138 $\to$ 0.251), which is what
+one would expect: where no text names a value, appearance is the only remaining cue, and the
+text-only model is blind there. The losses concentrate on text-dense government forms where a
+printed label already identifies the field and the image adds nothing but a template-specific
+distraction.
+
+The honest summary is that the page image is \emph{not} simply another shortcut of the kind
+absolute coordinates provided. It buys genuine recall on visually structured documents and costs
+precision on textually labelled ones.
+
+\textbf{Decision.} The image-stream configuration is the delivered model. The deciding measure is
+the headline one of Section~\ref{sec:metrics}, value recall. With the image on it is higher on
+seen templates (0.928 against 0.918), higher on unseen templates (0.713 against 0.695), higher on
+both held-out corpora, and the seen-minus-unseen gap is slightly narrower. The configuration also
+scores higher on ad-buy-form, which supplies three quarters of the unseen gold values (27{,}197 of
+36{,}026). Against this stands a real cost: registration-form F1 falls from 0.593 to 0.541, with
+\code{registrant\_name} collapsing, and the run's registration-form interval
+($[0.454, 0.587]$ against $[0.567, 0.616]$) is markedly wider. Those intervals overlap, each
+configuration is a single run, and so the report claims a direction on the headline metric and
+not a significant improvement; several seeds per configuration would be needed to settle it. The
+no-image checkpoint \code{runs\textbackslash base} is released alongside the final model for
+anyone who weights registration-form precision above recall on label-poor fields.
+
 \subsection{Qualitative results}
 
 Numbers alone do not show whether a prediction is sensible, so three artefacts are produced
@@ -823,27 +937,168 @@ held-out examples view marks every gold value found or missed on documents from 
 using the same matching function as the metrics, and its extract view shows the model's output on
 a document supplied by the user.
 
-\subsection{What limits generalisation}
+\subsection{Failure analysis: what limits generalisation}
 \label{sec:limits}
+
+\textbf{Scope.} The failure analysis consists of error bucketing on seen templates, counterfactual
+probes, and value recall stratified by structural properties of the gold value. The analysis files
+used for this report were produced from the final model (\code{runs\textbackslash visual}); where a
+no-image figure is given for comparison it is named. Four of the seven probes --- \code{identity},
+\code{shift\_scale}, \code{mirror\_x} and \code{reading\_order} --- carry the page image edited
+consistently with the geometry, so the model keeps the input it was trained with. The remaining
+three move or mask individual entities, which the pixels cannot follow, and so run on a blank page;
+they are marked in Table~\ref{tab:probes} and should be read only against each other and against
+the identity row.
+
+\textbf{On seen templates linking is rarely the problem.} Of 1{,}098 gold-linked values, 1{,}045
+(95.2\%) take the right key. The remainder split into 21 wrong keys that were nearer than the
+gold key (1.9\%), 21 wrong keys that were not nearer (1.9\%), and 11 values given no key (1.0\%);
+20 of 1{,}376 keyless values (1.5\%) were wrongly given a key. The two wrong-key types suggest
+different causes: proximity winning over the right key in the first case, and key text outweighing
+distance in the second. The larger error source is tagging. At word level 95.9\% of gold value
+words are tagged as values, but 285 words that are not values are (12.1\% of the \code{O} words;
+value precision 91.7\%), and 136 value words are missed. Keys are recovered at 90.6\% (88 lost to
+\code{O}, 48 mistaken for values), and 50 of 242 header words (20.7\%) are called keys. Only 117
+of 5{,}691 tagged words (2.1\%) have the right role with the wrong B/I prefix.
+
+Every one of those linking figures is marginally \emph{worse} than the no-image run's, which
+scores 96.3\% correct with 14 nearer-key errors and 6 no-key predictions, and recovers keys at
+91.3\%. Stratified by source the same small regression appears: link recall falls from 0.966 to
+0.954 on FUNSD and from 0.962 to 0.953 on WildReceipt, and from 0.968 to 0.960 on one-to-one keys.
+This is the seen-template counterpart of the \code{registrant\_name} cost in
+Section~\ref{sec:ablations}: the image stream buys unseen value recall and gives back a little
+seen-template linking accuracy.
+
+\textbf{Counterfactual probes.} Each probe edits one property of a fully annotated seen-test page
+and re-runs the model. Every probe is read against the identity row of its own table, not against
+the evaluation report: on the held-out documents the identity row is 0.724 against 0.713 in the
+evaluation, the difference being the 60-page probe sample.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Probe} & \textbf{value recall} & \textbf{value acc.} & \textbf{link F1} & \textbf{entity F1} & \textbf{pair F1} \\
+\midrule
+identity                    & 0.941 & 0.953 & 0.925 & 0.890 & 0.737 \\
+\code{shift\_scale}         & 0.932 & 0.958 & 0.930 & 0.890 & 0.736 \\
+\code{mirror\_x}            & 0.888 & 0.773 & 0.760 & 0.820 & 0.510 \\
+\code{value\_below}$^\dagger$     & 0.883 & 0.758 & 0.732 & 0.842 & 0.521 \\
+\code{value\_right}$^\dagger$     & 0.908 & 0.963 & 0.932 & 0.863 & 0.683 \\
+\code{key\_text\_masked}$^\dagger$& 0.852 & 0.760 & 0.797 & 0.493 & 0.011 \\
+\code{reading\_order}       & 0.931 & 0.953 & 0.925 & 0.850 & 0.654 \\
+\bottomrule
+\end{tabular}
+\caption{Counterfactual probes on fully annotated seen-test documents, final model. Rows without a
+dagger carry the page image edited to match the geometry; $^\dagger$ marks the three probes that
+run on a blank page, because the pixels cannot follow a per-entity move. On the held-out VRDU
+documents only value recall is measurable: identity 0.724, \code{shift\_scale} 0.671 ($-0.053$),
+\code{mirror\_x} 0.615 ($-0.108$).}
+\label{tab:probes}
+\end{table}
+
+Three readings follow from Table~\ref{tab:probes}. First, a \emph{direction prior}: mirroring the
+page costs 0.180 of value accuracy and 0.165 of link F1, and moving every value below its key
+costs 0.195 and 0.193, while moving every value to the right of its key \emph{improves} value
+accuracy (+0.010) and link F1 (+0.007). The model has learned that values sit to the right of
+their keys. Second, \emph{the invariance proof holds, and on the final model the residue is gone}:
+under shift and scale the link F1 \emph{rises} slightly, 0.925 to 0.930, entity F1 is unchanged at
+0.890 and pair F1 moves by 0.001, while value recall falls by 0.009. The no-image run showed a
+larger residue (value recall $-0.017$, entity F1 $-0.008$, pair F1 $-0.017$), attributed there to
+the tagger seeing LayoutLMv3's absolute coordinates. With the page image transformed consistently
+with the boxes that residue all but disappears, which suggests part of it was the tagger losing
+positional grounding rather than depending on absolute coordinates alone. On the held-out
+documents, where the image is also edited, value recall falls by 0.053 under shift and scale and
+0.108 under mirroring: mirroring the pixels as well as the boxes is a larger perturbation than
+mirroring boxes alone. Third, \emph{key text matters most for finding keys}: masking every key's
+text roughly halves entity F1 (0.890 to 0.493) and takes pair F1 from 0.737 to 0.011, while link
+F1 given the spans falls less (0.925 to 0.797). Perturbing the reading order leaves link F1
+untouched (0.925) but costs entity F1 0.040 and pair F1 0.083, so span recognition, not linking,
+depends on token order.
+
+\textbf{Held-out value recall by structure.} Table~\ref{tab:strata} stratifies value recall on
+the 36{,}026 unseen gold values by structural properties of the value.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{@{}llrc@{}}
+\toprule
+\textbf{Property} & \textbf{Bucket} & \textbf{n} & \textbf{Value recall} \\
+\midrule
+Lines          & single-line      & 32{,}710 & 0.746 \\
+               & multi-line       & 3{,}316  & 0.390 \\
+Words          & 1 word           & 19{,}991 & 0.784 \\
+               & 2--4 words       & 11{,}635 & 0.661 \\
+               & 5+ words         & 4{,}400  & 0.532 \\
+Structure      & single field     & 18{,}236 & 0.662 \\
+               & table line item  & 17{,}790 & 0.765 \\
+Page           & first page       & 18{,}129 & 0.744 \\
+               & later page       & 17{,}897 & 0.682 \\
+Vertical       & top third        & 15{,}643 & 0.672 \\
+               & middle third     & 13{,}691 & 0.788 \\
+               & bottom third     & 6{,}689  & 0.657 \\
+\bottomrule
+\end{tabular}
+\caption{Unseen-template value recall by structural property of the gold value, final model. By
+value type, recall is 0.870 for date-like, 0.710 for mixed, 0.662 for alphabetic and 0.615 for
+numeric values.}
+\label{tab:strata}
+\end{table}
 
 Two structural assumptions fail, and the failure analysis names both.
 
 \textbf{``A key sits beside its value'' fails for tables.} A column header is one key for dozens
 of values stacked beneath it, which is not the one-key-beside-one-value geometry the link scorer
-was trained on. This produces the found-but-not-keyed collapse of
-Figure~\ref{fig:perfield} and the 0.005 line-item F1. Counterfactual probes confirm the
-direction bias directly: moving every value below its key costs 0.167 of value accuracy, and
-mirroring the page horizontally costs 0.227.
+was trained on. This produces the found-but-not-keyed collapse of Figure~\ref{fig:perfield} and
+the 0.005 line-item F1. Table cells are in fact \emph{found}: value recall on table line items is
+0.765, higher than the 0.662 on single fields. What fails is attaching them to a header and
+assembling them into rows. The probes agree on the cause. A key serving many values is not itself
+the problem, since on seen templates one-to-many keys score 0.947 against 0.960 for one-to-one;
+the direction is, because a header sits \emph{above} its values and moving every value below its
+key costs 0.195 of value accuracy. Stratifying by the direction from key to value on seen
+templates points the same way: recall is 0.976 for values to the right of their key and 0.979 for
+values below, but 0.444 for other diagonals and 0.833 for values to the left. Those last two
+buckets hold only 27 and 12 values, which the analysis itself treats as anecdotal.
 
 \textbf{``Every value has a printed label'' fails for signature and address blocks.} Here the
 first bar is already low --- the tagger does not mark the span at all --- because nothing on the
-page says what the text is. A schema-free model cannot invent a field name, so this is an honest
+page says what the text is: \code{signer\_title} 0.084, \code{tv\_address} 0.251,
+\code{signer\_name} 0.351. The same failure appears on seen templates, where the SROIE
+\code{company} field, a receipt's header with no printed label, has value recall 0.549 against
+1.000 for \code{total}, and where \code{date} is found 0.902 of the time but matched to a key only
+0.482. A schema-free model cannot invent a field name, so for text-only evidence this is an honest
 ceiling of the approach rather than a tuning gap. Masking all key text drives end-to-end pair F1
-to 0.000, confirming how much of the decision rests on what keys say.
+to 0.011, confirming how much of the decision rests on what keys say.
 
-A third, softer limit is multi-line and long values: recall falls from 0.739 on single-line
-values to 0.265 on multi-line ones, and from 0.819 on one-word values to 0.398 on values of five
-words or more.
+A third, softer limit is multi-line and long values: recall falls from 0.746 on single-line
+values to 0.390 on multi-line ones, and from 0.784 on one-word values to 0.532 on values of five
+words or more. Seen templates hold only 24 multi-line values, too few to say whether the drop
+there is as steep.
+
+\textbf{What the image stream changes.} Two measurements locate its effect. Per field, its gains
+sit on exactly the fields the analysis above calls label-poor:
+\code{foreign\_principle\_name} value recall rises from 0.352 to 0.568, \code{agency} from 0.572
+to 0.738 and \code{tv\_address} from 0.138 to 0.251. So the second assumption's ceiling is a
+ceiling for text and geometry only; appearance supplies a cue where no text names the value, but
+the lift is partial, and \code{tv\_address} is still at 0.251.
+
+Structurally, comparing the two runs over the same 36{,}026 unseen gold values, the gains
+concentrate on \emph{long and multi-line} values: multi-line recall rises from 0.270 to 0.390 and
+five-or-more-word values from 0.400 to 0.532, with two-to-four-word values from 0.594 to 0.661. It
+\emph{costs} on short ones --- single-word values fall from 0.819 to 0.784, numeric from 0.632 to
+0.615 and date-like from 0.895 to 0.870. The natural reading is that appearance tells the tagger
+where a span \emph{ends}: ruling lines, cell boundaries and blocks of whitespace delimit a
+multi-line address or a long programme description in a way text alone cannot, so fewer such spans
+are truncated. Where the value is a single token the text already settled the question and the
+pixels only add noise. That is the same shape as the losses, which sit on text-dense registration
+forms where \code{registrant\_name} F1 falls from 0.789 to 0.560 even though a printed label
+already identifies the field, and on seen-template linking, which gives back about a point. Taken
+together the two measurements give one account of the image stream: \emph{it helps wherever the
+textual evidence is weak}, whether because no printed label names the value or because nothing in
+the text marks where it stops, and it costs a little wherever the text already settles the matter.
+The mechanism is an interpretation of the per-field and structural breakdowns; no per-document
+inspection has tested it. Still not measured: the three per-entity probes on an edited image,
+which would need a page image consistent with a moved or masked entity.
 
 %% ================================================================= 8. NOVELTY
 \section{Plan for Novelty Assessment}
@@ -870,6 +1125,11 @@ never against the VRDU test documents reported here. Alongside them, four ablati
 unrun --- \code{nogeom} (is linking carried by geometry or by key text?), \code{nobalance} (does
 equal source sampling matter?), \code{nosroie} (does value-only supervision help at all?) and
 \code{segment} (how optimistic is the gold-segment box protocol against honest per-word boxes?).
+Two further items follow from the choice of final model: several seeds per configuration, to
+separate the image stream's effect from run-to-run noise, and probe images that are edited
+consistently with a \emph{moved or masked entity}, which would extend the image-consistent probing
+already done for \code{identity}, \code{shift\_scale}, \code{mirror\_x} and \code{reading\_order}
+to the remaining three.
 
 %% ============================================================== 9. CONCLUSION
 \section{Conclusion}
@@ -877,70 +1137,83 @@ equal source sampling matter?), \code{nosroie} (does value-only supervision help
 
 We built a schema-free key-value extraction system that is told nothing about which fields a form
 contains, and evaluated it under a template-level split with explicit leakage assertions. On
-templates it has never seen it recovers 0.695 of gold values against 0.918 on seen templates, and
-scores 0.593 micro F1 under VRDU's own benchmark-style field metric with no VRDU training data of
-any kind.
+templates it has never seen, the final model recovers 0.713 of gold values against 0.928 on seen
+templates, and under VRDU's own benchmark-style field metric scores 0.541 micro F1 on
+registration forms and 0.538 unrepeated F1 on ad-buy forms, with no VRDU training data of any
+kind.
 
-Three conclusions are supported by the measurements rather than by argument.
+Four conclusions are supported by the measurements rather than by argument.
 
 \textbf{Relative geometry appears to be what makes the representation transfer.} The
-\code{absgeom} ablation scores \emph{better} than the full system on seen templates and worse on
+\code{absgeom} ablation scores \emph{better} than the no-image base system on seen templates and worse on
 every cross-template measure --- unseen value recall, the width of the gap, and both VRDU corpora.
 That asymmetry is the signature of a removed shortcut rather than of reduced capacity. The
 intervals overlap, so the result is directionally consistent across five measures rather than
-individually significant; confirming it would need several seeds per configuration.
+individually significant; confirming it would need several seeds per configuration. Both the
+geometry and the augmentation ablations were run with the image stream off, and were not
+repeated on the final model.
 
 \textbf{Template novelty is nearly free; domain novelty is the real cost.} Under a split that
 holds out in-domain templates, entity F1, link F1 and end-to-end pair F1 show no degradation at
-all --- every gap interval contains zero --- while value recall falls only on the cross-domain
-VRDU documents. The headline gap of 0.223 is therefore a statement about domain shift, and
+all --- every gap interval contains zero (measured on the no-image configuration) --- while value recall falls only on the cross-domain
+VRDU documents. The headline gap (0.223 for the no-image run, 0.215 for the final model) is therefore a statement about domain shift, and
 reading it as a template-generalisation gap would be wrong.
+
+\textbf{The page image helps the headline metric, but not uniformly.} With the image stream on,
+value recall rises on seen and unseen templates and on both held-out corpora, and the gains
+concentrate on fields with weak or absent printed labels. Registration-form F1 falls, driven by
+one field. This is the basis for making it the final model, and it rests on a single run.
 
 \textbf{The failure modes are structural and nameable.} The model assumes a key sits beside its
 value and that every value carries a printed label. Tables break the first; signature and address
 blocks break the second. Both were identified by counterfactual probes rather than by inspection.
 
 Future work follows directly: the three changes in Section~\ref{sec:novelty}, the four remaining
-ablations, and an evaluation on forms from a third domain to test whether the domain-shift
-conclusion holds beyond VRDU.
+ablations, several seeds per configuration, probe images edited consistently with a moved or masked
+entity, and an evaluation on forms from a third domain to test whether the domain-shift conclusion
+holds beyond VRDU.
 
 %% ============================================================== REFERENCES
 \begin{thebibliography}{9}\small
 
 \bibitem{layoutlm} Yiheng Xu, Minghao Li, Lei Cui, Shaohan Huang, Furu Wei, and Ming Zhou.
-\emph{LayoutLM: Pre-training of Text and Layout for Document Image Understanding.} KDD, 2020.
+\emph{LayoutLM: Pre-training of Text and Layout for Document Image Understanding}, KDD, 2020.
+\url{https://arxiv.org/abs/1912.13318}
 
-\bibitem{layoutlmv2} Yang Xu, Yiheng Xu, Tengchao Lv, Lei Cui, Furu Wei, et al.
-\emph{LayoutLMv2: Multi-modal Pre-training for Visually-rich Document Understanding.} ACL, 2021.
+\bibitem{layoutlmv2} Yang Xu, Yiheng Xu, Tengchao Lv, Lei Cui, and Furu Wei.
+\emph{LayoutLMv2: Multi-modal Pre-training for Visually-rich Document Understanding}, ACL, 2021.
+\url{https://arxiv.org/abs/2012.14740}
 
 \bibitem{layoutlmv3} Yupan Huang, Tengchao Lv, Lei Cui, Yutong Lu, and Furu Wei.
-\emph{LayoutLMv3: Pre-training for Document AI with Unified Text and Image Masking.}
-ACM Multimedia, 2022.
+\emph{LayoutLMv3: Pre-training for Document AI with Unified Text and Image Masking},
+ACM Multimedia, 2022. \url{https://arxiv.org/abs/2204.08387}
 
 \bibitem{funsd} Guillaume Jaume, Hazim Kemal Ekenel, and Jean-Philippe Thiran.
-\emph{FUNSD: A Dataset for Form Understanding in Noisy Scanned Documents.} ICDAR-OST, 2019.
+\emph{FUNSD: A Dataset for Form Understanding in Noisy Scanned Documents}, ICDAR-OST, 2019.
+\url{https://arxiv.org/abs/1905.13538}
 
 \bibitem{sroie} Zheng Huang, Kai Chen, Jianhua He, Xiang Bai, Dimosthenis Karatzas, Shijian Lu,
 and C. V. Jawahar. \emph{ICDAR2019 Competition on Scanned Receipt OCR and Information
-Extraction.} ICDAR, 2019.
+Extraction}, ICDAR, 2019. \url{https://rrc.cvc.uab.es/?ch=13}
 
 \bibitem{sdmgr} Hongbin Sun, Zhanghui Kuang, Xiaoyu Yue, Chenhao Lin, and Wayne Zhang.
-\emph{Spatial Dual-Modality Graph Reasoning for Key Information Extraction.}
-arXiv:2103.14470, 2021. (Introduces the WildReceipt dataset.)
+\emph{Spatial Dual-Modality Graph Reasoning for Key Information Extraction}, arXiv preprint,
+2021. \url{https://arxiv.org/abs/2103.14470} (Introduces the WildReceipt dataset.)
 
 \bibitem{vrdu} Zilong Wang, Yichao Zhou, Wei Wei, Chen-Yu Lee, and Sandeep Tata.
-\emph{VRDU: A Benchmark for Visually-rich Document Understanding.} KDD, 2023.
+\emph{VRDU: A Benchmark for Visually-rich Document Understanding}, KDD, 2023.
 \url{https://arxiv.org/abs/2211.15421}
 
-\bibitem{doctr} Mindee. \emph{docTR: Document Text Recognition.} Open-source library, 2021.
-\url{https://github.com/mindee/doctr}
+\bibitem{doctr} Mindee. \emph{docTR: Document Text Recognition}, open-source library, 2021.
+\url{https://github.com/mindee/doctr}. Accessed on: 25th October, 2026.
 
 \bibitem{fast} Zhe Chen, Jiahao Wang, Wenhai Wang, Guo Chen, Enze Xie, Ping Luo, and Tong Lu.
-\emph{FAST: Faster Arbitrarily-Shaped Text Detector with Minimalist Kernel Representation.}
-arXiv:2111.02394, 2021.
+\emph{FAST: Faster Arbitrarily-Shaped Text Detector with Minimalist Kernel Representation},
+arXiv preprint, 2021. \url{https://arxiv.org/abs/2111.02394}
 
 \bibitem{parseq} Darwin Bautista and Rowel Atienza.
-\emph{Scene Text Recognition with Permuted Autoregressive Sequence Models.} ECCV, 2022.
+\emph{Scene Text Recognition with Permuted Autoregressive Sequence Models}, ECCV, 2022.
+\url{https://arxiv.org/abs/2207.06966}
 
 \end{thebibliography}
 

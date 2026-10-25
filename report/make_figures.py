@@ -1,15 +1,15 @@
 """Regenerate perfield.pdf for the IE 643 report.  python make_figures.py
-Numbers are the base run's per-field VRDU recall (runs\\base\\analysis\\failure_report.md, section E)."""
+Numbers are the final model's per-field VRDU recall (runs\\visual\\analysis\\failure_report.md, section E)."""
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt, numpy as np
 
-rows = [("gross_amount",0.977,0.690),("sub_amount",0.955,0.558),("registrant_name",0.945,0.819),
-        ("registration_num",0.929,0.917),("contract_num",0.837,0.826),("program_end_date",0.790,0.612),
-        ("program_start_date",0.778,0.487),("channel",0.777,0.218),("file_date",0.749,0.741),
-        ("advertiser",0.679,0.657),("program_desc",0.587,0.305),("flight_to",0.586,0.468),
-        ("property",0.584,0.283),("flight_from",0.574,0.445),("agency",0.572,0.533),
-        ("product",0.566,0.547),("foreign_principle_name",0.352,0.252),("signer_name",0.246,0.218),
-        ("tv_address",0.138,None),("signer_title",0.078,0.051)]
+rows = [("gross_amount",0.959,0.738),("registrant_name",0.942,0.537),("registration_num",0.883,0.873),
+        ("sub_amount",0.867,0.462),("contract_num",0.822,0.818),("program_end_date",0.796,0.627),
+        ("channel",0.787,0.250),("file_date",0.764,0.755),("program_start_date",0.756,0.494),
+        ("advertiser",0.748,0.703),("agency",0.738,0.637),("program_desc",0.677,0.325),
+        ("product",0.609,0.550),("property",0.585,0.258),("foreign_principle_name",0.568,0.443),
+        ("flight_from",0.532,0.373),("flight_to",0.521,0.394),("signer_name",0.351,0.255),
+        ("tv_address",0.251,None),("signer_title",0.084,0.062)]
 names=[r[0] for r in rows]; vr=[r[1] for r in rows]
 kr=[0.0 if r[2] is None else r[2] for r in rows]; mask=[r[2] is None for r in rows]
 y=np.arange(len(rows)); h=0.38
@@ -28,6 +28,6 @@ ax.xaxis.grid(True,color="#d8d8d8",lw=0.7,zorder=0); ax.set_axisbelow(True)
 for s in ("top","right","left"): ax.spines[s].set_visible(False)
 ax.spines["bottom"].set_color("#999"); ax.tick_params(axis="y",length=0)
 ax.legend(loc="lower right",frameon=False,fontsize=9)
-ax.set_xlabel("recall on unseen-template VRDU documents (base run)",fontsize=9,color="#444")
+ax.set_xlabel("recall on unseen-template VRDU documents (final model, image stream on)",fontsize=9,color="#444")
 fig.subplots_adjust(left=0.22,right=0.90,top=0.98,bottom=0.08)
 fig.savefig("perfield.pdf"); print("perfield.pdf written")

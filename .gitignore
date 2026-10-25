@@ -31,3 +31,6 @@ report/*.synctex.gz
 # OS
 .DS_Store
 Thumbs.db
+
+# Patch backups
+*.bak
