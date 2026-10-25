@@ -157,21 +157,31 @@ def _move_entity(doc, ent, dx, dy):
                                   min(max(b[2] + dx, 0), doc["width"]), min(max(b[3] + dy, 0), doc["height"])]
 
 
-def make_probe(doc: dict, probe: str):
-    """Edited deep copy of doc (image dropped: geometry edits would contradict the pixels)."""
+def make_probe(doc: dict, probe: str, with_image: bool = False):
+    """Edited deep copy of doc, plus a page image edited to match (None where pixels cannot follow)."""
+    from PIL import Image
     d = copy.deepcopy(doc)
-    d["image_path"] = None
     W, H = d["width"], d["height"]
     h = median_word_height(d)
-    if probe == "shift_scale":
+    im = page_image(d) if with_image else None
+
+    if probe in ("identity", "reading_order"):
+        pass
+    elif probe == "shift_scale":
         s, tx, ty = 0.8, 0.1 * W, 0.1 * H
         for w in d["words"]:
             b = w["box"]
             w["box"] = [b[0] * s + tx, b[1] * s + ty, b[2] * s + tx, b[3] * s + ty]
+        if im is not None:
+            im = im.transform((int(W), int(H)), Image.AFFINE,
+                              (1 / s, 0, -tx / s, 0, 1 / s, -ty / s),
+                              resample=Image.BILINEAR, fillcolor="white")
     elif probe == "mirror_x":
         for w in d["words"]:
             b = w["box"]
             w["box"] = [W - b[2], b[1], W - b[0], b[3]]
+        if im is not None:
+            im = im.transpose(Image.FLIP_LEFT_RIGHT)
     elif probe in ("value_below", "value_right"):
         moved = set()
         for k, v in d["links"]:
@@ -184,14 +194,19 @@ def make_probe(doc: dict, probe: str):
                 dx, dy = kb[2] + 1.0 * h - vb[0], kb[1] - vb[1]
             _move_entity(d, d["entities"][v], dx, dy)
             moved.add(v)
+        im = None
     elif probe == "key_text_masked":
         for e in d["entities"]:
             if e["role"] == "key":
                 for w in e["word_ids"]:
                     d["words"][w]["text"] = "xxxx"
-    elif probe not in ("identity", "reading_order"):
+        im = None
+    else:
         raise ValueError(probe)
-    return d
+
+    if im is None:
+        d["image_path"] = None
+    return d, im
 
 
 PROBES = ["identity", "shift_scale", "mirror_x", "value_below", "value_right", "key_text_masked", "reading_order"]
@@ -247,12 +262,14 @@ def test_set_strata(test_files, preds, fuzzy) -> dict:
 
 
 def run_probes(model, encoder, docs, device, adt, fuzzy=0.8, probes=PROBES) -> dict:
+    with_image = encoder.image_processor is not None
     out = {}
     for probe in probes:
         counts = []
         for d in docs:
-            pd = make_probe(d, probe)
-            pred = predict_doc(model, encoder, pd, device, adt, use_gold_units=(probe != "reading_order"))
+            pd, im = make_probe(d, probe, with_image)
+            pred = predict_doc(model, encoder, pd, device, adt,
+                               use_gold_units=(probe != "reading_order"), image=im)
             counts.append(doc_counts(pd, pred, fuzzy))
         s = summarize(counts)
         out[probe] = {k: s[k] for k in ("value_recall", "value_acc", "link_f1", "entity_f1", "e2e_pair_f1")}
@@ -421,7 +438,9 @@ def format_report(result: dict) -> str:
     L += ["How to read D: a large drop under value_below means the model assumes values sit to the right of",
           "keys; under mirror_x, that it assumes left-to-right layouts; under key_text_masked, that it relies on",
           "what keys say rather than where things are; shift_scale should be ~0 (relative geometry).",
-          "Probes run without the page image (edited geometry would contradict the pixels), so always compare",
+          "Probes that translate, scale or mirror the whole page carry the page image edited to match; "
+          "value_below, value_right and key_text_masked drop it, because pixels cannot follow a "
+          "per-entity move. A text-and-layout run has no image either way. Always compare",
           "a probe with the identity row of the same table, not with the evaluation report.", ""]
     return "\n".join(L)
 

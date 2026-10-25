@@ -72,12 +72,14 @@ def _decode_links(logits: torch.Tensor, keys: list, values: list, top: int = 3):
 
 
 @torch.no_grad()
-def predict_doc(model, encoder, doc: dict, device, amp_dtype=None, use_gold_units: bool = True) -> dict:
+def predict_doc(model, encoder, doc: dict, device, amp_dtype=None,
+                use_gold_units: bool = True, image=None) -> dict:
     model.eval()
     has_gold = bool(doc.get("entities"))
     units = doc_units(doc, use_gold=use_gold_units and has_gold)
     chunks = encoder.chunk_units(doc, units)
-    image = page_image(doc) if encoder.image_processor is not None else None
+    if image is None and encoder.image_processor is not None:
+        image = page_image(doc)
     gold_ents = doc_link_entities(doc) if has_gold else []
     word_tag, word_conf = {}, {}
     pred_entities, pred_links, link_p = [], [], []
